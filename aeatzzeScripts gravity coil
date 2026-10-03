@@ -1,0 +1,189 @@
+-- Script em ServerScriptService
+-- Gravity Coil (Azul)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+-- Configurações
+local GRAVITY_REDUCTION = 0.75
+
+-- Assets clássicos
+local MESH_ID = "rbxassetid://16606212"
+local GRAVITY_MESH_TEXTURE = "rbxassetid://16606141"
+local GRAVITY_ICON = "rbxassetid://16619617"
+local GRAVITY_SOUND = "rbxassetid://16619553"
+
+-- Controle da Gravity Coil
+local gravityConnections = {}
+
+local function removeGravityEffect(player)
+	local data = gravityConnections[player]
+
+	if data then
+		if data.connection then
+			data.connection:Disconnect()
+		end
+
+		if data.heartbeat then
+			data.heartbeat:Disconnect()
+		end
+
+		gravityConnections[player] = nil
+	end
+
+	local character = player.Character
+	if character then
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local force = root:FindFirstChild("GravityCoilEffect")
+			if force then
+				force:Destroy()
+			end
+		end
+	end
+end
+
+local function applyGravityEffect(player, tool)
+	removeGravityEffect(player)
+
+	local character = player.Character
+	if not character then return end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+
+	if not humanoid or not root then return end
+
+	local handle = tool:FindFirstChild("Handle")
+	local sound = handle and handle:FindFirstChild("CoilSound")
+
+	if sound then
+		sound:Play()
+	end
+
+	local force = Instance.new("BodyForce")
+	force.Name = "GravityCoilEffect"
+	force.Parent = root
+
+	local mass = root.AssemblyMass
+	local gravity = workspace.Gravity
+
+	force.Force = Vector3.new(0, mass * gravity * GRAVITY_REDUCTION, 0)
+
+	local oldJumpPower = humanoid.JumpPower
+	local oldJumpHeight = humanoid.JumpHeight
+	local useJumpPower = humanoid.UseJumpPower
+
+	if useJumpPower then
+		humanoid.JumpPower = 75
+	else
+		humanoid.JumpHeight = 18
+	end
+
+	local connection
+	local heartbeat
+
+	connection = tool.Unequipped:Connect(function()
+		if connection then connection:Disconnect() end
+		if heartbeat then heartbeat:Disconnect() end
+		if force then force:Destroy() end
+
+		if humanoid and humanoid.Parent then
+			if useJumpPower then
+				humanoid.JumpPower = oldJumpPower
+			else
+				humanoid.JumpHeight = oldJumpHeight
+			end
+		end
+
+		gravityConnections[player] = nil
+	end)
+
+	heartbeat = RunService.Heartbeat:Connect(function()
+		if not tool.Parent
+			or tool.Parent ~= character
+			or not character.Parent
+			or not humanoid.Parent
+			or not root.Parent then
+
+			removeGravityEffect(player)
+			return
+		end
+
+		local currentMass = root.AssemblyMass
+		force.Force = Vector3.new(0, currentMass * workspace.Gravity * GRAVITY_REDUCTION, 0)
+	end)
+
+	gravityConnections[player] = {
+		connection = connection,
+		heartbeat = heartbeat
+	}
+
+	humanoid.Died:Connect(function()
+		removeGravityEffect(player)
+	end)
+end
+
+local function createGravityCoil(player)
+	local tool = Instance.new("Tool")
+	tool.Name = "Gravity Coil"
+	tool.ToolTip = "Jump higher!"
+	tool.CanBeDropped = false
+	tool.RequiresHandle = true
+	tool.TextureId = GRAVITY_ICON
+
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(1, 1.2, 2)
+	handle.CanCollide = false
+	handle.Massless = true
+	handle.Parent = tool
+
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.FileMesh
+	mesh.MeshId = MESH_ID
+	mesh.TextureId = GRAVITY_MESH_TEXTURE
+	mesh.Scale = Vector3.new(0.7, 0.7, 0.7)
+	mesh.Parent = handle
+
+	local sound = Instance.new("Sound")
+	sound.Name = "CoilSound"
+	sound.SoundId = GRAVITY_SOUND
+	sound.Volume = 1
+	sound.Parent = handle
+
+	tool.Equipped:Connect(function()
+		applyGravityEffect(player, tool)
+	end)
+
+	tool.Unequipped:Connect(function()
+		removeGravityEffect(player)
+	end)
+
+	return tool
+end
+
+local function giveGravityCoil(player)
+	local function onCharacterAdded(character)
+		task.wait(0.6)
+
+		local backpack = player:WaitForChild("Backpack")
+		if not backpack:FindFirstChild("Gravity Coil") and not character:FindFirstChild("Gravity Coil") then
+			createGravityCoil(player).Parent = backpack
+		end
+	end
+
+	if player.Character then
+		onCharacterAdded(player.Character)
+	end
+
+	player.CharacterAdded:Connect(onCharacterAdded)
+end
+
+Players.PlayerAdded:Connect(giveGravityCoil)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	giveGravityCoil(player)
+end
+
+print("✅ Gravity Coil carregada com sucesso!")
